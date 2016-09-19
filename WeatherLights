@@ -1,0 +1,132 @@
+/**
+ *  WeatherLights
+ *
+ *  Copyright 2016 Mykines
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ *  in compliance with the License. You may obtain a copy of the License at:
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
+ *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
+ *  for the specific language governing permissions and limitations under the License.
+ *
+ */
+definition(
+    name: "WeatherLights",
+    namespace: "Mykines",
+    author: "Mykines",
+    description: "Turn an OSRAM color bulb colors to indicate how different from normal today's temperature will be.",
+    category: "Convenience",
+    iconUrl: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience.png",
+    iconX2Url: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience@2x.png",
+    iconX3Url: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience@2x.png")
+
+
+preferences {
+	section("Where..."){
+		input "zipcode", "text", title: "Zipcode?", required: true
+	}
+	section("When...") {
+		input "theOnTime", "time", title: "Turn on at what time?", required: true
+		input "theOffTime", "time", title: "Turn off at what time?", required: true
+	}
+//   section("What...") {
+//    	input "thebutton", "capability.button"
+//        input "thebulb", "capability.colorControl", title: "pick a bulb", required: true, multiple: false
+// 	}
+//    section("TESTING") {
+//    	input "temperatureOffset", "number", title: "temperatureOffset"
+//  	}
+}
+
+
+def installed() {
+	schedule(theOnTime, "startLightForecast")
+	schedule(theOffTime, "stopLightForecast")
+    log.debug "Installed with settings: ${settings}"
+}
+
+def updated() {
+	unsubscribe()
+	schedule(theOnTime, "startLightForecast")
+	schedule(theOffTime, "stopLightForecast")
+	log.debug "Updated with settings: ${settings}"
+}
+
+def startLightForecast() {
+
+		def forecastInput = getWeatherFeature("forecast", zipcode)
+//		log.debug "day forecastInput: $forecastInput"
+	    def forecastHighString = forecastInput?.forecast?.simpleforecast?.forecastday?.high[0].fahrenheit
+	    def forecastHigh = forecastHighString.toInteger()
+		log.debug "day forecastData: $forecastHigh"     
+	
+//		Get this stuff from the wunderground API:  https://www.wunderground.com/weather/api/d/docs?d=data/index&MR=1
+		def response = getWeatherFeature("almanac", zipcode)
+    	def almanacData = response?.values()
+//		log.debug "almanac: $almanacData"      
+    	def aveHighString = response?.almanac?.temp_high.normal.F
+		def aveHigh = aveHighString.toInteger()
+		log.debug "aveHigh: $aveHigh"      
+        
+    	def temperatureDelta = forecastHigh - aveHigh
+    
+ 	   log.debug "temperatureDelta: $temperatureDelta"  
+                
+ 	   def bulbColorText = "unknown"
+ 	   def bulbColor = 22  // icky yellow-green hue, should always be overridden
+    
+		if(temperatureDelta>9) {
+	       	bulbColorText = "Red"
+	        bulbColor = 0
+	    } else if(temperatureDelta>5) {
+	       	bulbColorText = "Orange"
+	        bulbColor = 3
+	    } else if(temperatureDelta>2) {
+	       	bulbColorText = "Yellow"
+	        bulbColor = 8
+		} else if(temperatureDelta>-3) {
+	      	bulbColorText = "Green"
+	        bulbColor = 33
+		} else if(temperatureDelta>-6) {
+	       	bulbColorText = "Light Blue"
+	        bulbColor = 60
+	    } else if(temperatureDelta>-10) {
+	       	bulbColorText = "Indigo"
+	        bulbColor = 66
+		} else {
+	       	bulbColorText = "Purple"
+	        bulbColor = 95
+	    }
+
+	    log.debug "bulbColor: $bulbColor" 
+	    log.debug "bulbColorText: $bulbColorText" 
+    
+		def bulbStatus = thebulb.currentSwitch
+		state.origBulbStatus = bulbStatus
+        state.origColorTemperature = thebulb.currentColorTemperature
+		log.debug "switch status: $bulbStatus"
+//		def bulbLevel = thebulb.currentLevel
+//		log.debug "switch level: $bulbLevel"
+		def bulbHue = thebulb.currentHue
+		log.debug "hue: $bulbHue"
+    	thebulb.setLevel(100)
+		thebulb.setHue(bulbColor)
+		thebulb.setSaturation(100)
+
+        if(bulbStatus == "off") {
+    		thebulb.on()
+    	}
+
+}
+
+
+def stopLightForecast() {
+//	if(state.origBulbStatus == "off") {		// I always want it off
+    	thebulb.off()
+//    }
+    log.debug "orig color temp: $state.origColorTemperature"
+    thebulb.setColorTemperature(state.origColorTemperature)
+}
